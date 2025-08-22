@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Count and Nobles (Online)</title>
+    <style>
+        /* CSSはAI対戦版から変更ありませんが、ロビー画面のスタイルを追加しています */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Orbitron:wght@400;700&display=swap');
+        :root {
+            --bg-color: #1a1a1a; --text-color: #e0e0e0; --primary-color: #d4af37;
+            --secondary-color: #4a0e0e; --card-bg: #2c2c2c; --card-border: #444;
+            --font-main: 'Noto Serif JP', serif; --font-timer: 'Orbitron', sans-serif;
+        }
+        body { background-color: var(--bg-color); color: var(--text-color); font-family: var(--font-main); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
+        .container { width: 95%; max-width: 1200px; height: 95vh; border: 2px solid var(--primary-color); border-radius: 15px; background: rgba(0, 0, 0, 0.3); backdrop-filter: blur(10px); box-shadow: 0 0 30px rgba(212, 175, 55, 0.5); }
+        
+        /* --- ロビースタイル --- */
+        #lobby { padding: 40px; text-align: center; }
+        #lobby h1 { font-size: 3rem; color: var(--primary-color); }
+        #lobby p { font-size: 1.2rem; margin: 20px 0; }
+        .lobby-actions button, .lobby-actions input { font-family: var(--font-main); font-size: 1.2rem; padding: 10px 20px; margin: 10px; border-radius: 8px; border: 2px solid var(--primary-color); background-color: transparent; color: var(--primary-color); cursor: pointer; transition: all 0.3s; }
+        .lobby-actions button:hover { background-color: var(--primary-color); color: var(--bg-color); }
+        .lobby-actions input { text-align: center; color: var(--text-color); }
+        #game-id-display { margin-top: 30px; font-size: 1.5rem; }
+        #game-id-display span { font-family: var(--font-timer); background: #000; padding: 5px 15px; border-radius: 5px; cursor: pointer; }
+
+        /* --- ゲーム画面スタイル (AI版と同様) --- */
+        .game-container { width: 100%; height: 100%; display: flex; flex-direction: column; }
+        .top-area { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; }
+        .timer-container { text-align: center; }
+        #timer { font-family: var(--font-timer); font-size: clamp(4rem, 15vw, 8rem); color: var(--primary-color); text-shadow: 0 0 15px var(--primary-color); transition: all 0.2s ease; }
+        .gun-area { position: absolute; font-size: 5rem; opacity: 0; transition: opacity 0.5s ease; cursor: pointer; filter: drop-shadow(0 0 10px #fff); }
+        .gun-area.active { opacity: 1; }
+        #message-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.85); padding: 30px 50px; border: 2px solid var(--primary-color); border-radius: 10px; text-align: center; z-index: 100; font-size: 2rem; box-shadow: 0 0 20px rgba(0,0,0,0.7); }
+        #message-box h2 { margin: 0 0 15px 0; color: var(--primary-color); }
+        #restart-button { margin-top: 20px; padding: 10px 20px; font-size: 1rem; cursor: pointer; background-color: var(--primary-color); color: var(--bg-color); border: none; border-radius: 5px; font-family: var(--font-main); font-weight: bold; transition: all 0.3s ease; }
+        .players-area { display: flex; justify-content: space-between; padding: 20px; gap: 20px; }
+        .player-container { flex: 1; display: flex; flex-direction: column; border: 1px solid var(--card-border); border-radius: 10px; padding: 15px; background: rgba(44, 44, 44, 0.5); }
+        .player-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .player-name { font-size: 1.5rem; font-weight: bold; }
+        .deck-info { font-size: 1.2rem; }
+        .cooldown-bar { width: 100%; height: 5px; background-color: #444; border-radius: 5px; margin-top: 10px; overflow: hidden; }
+        .cooldown-progress { width: 100%; height: 100%; background-color: var(--primary-color); transition: width 0.1s linear; }
+        .hand { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; min-height: 180px; }
+        .card { background-color: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; transition: all 0.3s ease; position: relative; }
+        .card:hover { transform: translateY(-10px) scale(1.05); box-shadow: 0 10px 20px rgba(0,0,0,0.5); border-color: var(--primary-color); }
+        .card.disabled { cursor: not-allowed; opacity: 0.5; filter: grayscale(80%); }
+        .card-name { font-weight: bold; font-size: 1rem; color: var(--primary-color); padding-top: 15px; }
+        .card-desc { font-size: 0.8rem; flex-grow: 1; margin-top: 5px; }
+        .card-info { font-size: 0.7rem; text-align: right; opacity: 0.7; }
+        .card-key-hint { position: absolute; top: 5px; left: 10px; font-size: 1.2rem; font-weight: bold; font-family: var(--font-timer); color: rgba(255, 255, 255, 0.4); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- ステップ3: ロビー画面の作成 -->
+    <div id="lobby">
+        <h1>Count and Nobles</h1>
+        <p>オンラインで対戦する</p>
+        <div class="lobby-actions">
+            <button id="create-game-btn">ルームを作成</button>
+            <input type="text" id="join-game-input" placeholder="ルームIDを入力">
+            <button id="join-game-btn">ルームに参加</button>
+        </div>
+        <div id="game-id-display"></div>
+        <p id="lobby-status"></p>
+    </div>
+
+    <!-- ゲーム画面 (最初は非表示) -->
+    <div id="game-container" class="game-container" style="display: none;">
+        <div class="top-area">
+            <div class="timer-container">
+                <div id="timer">10.00</div>
+            </div>
+            <div id="gun" class="gun-area">🔫</div>
+        </div>
+        <div id="message-box" style="display: none;"></div>
+        <div class="players-area">
+            <div class="player-container" id="player1-container">
+                <div class="player-info">
+                    <span class="player-name" id="player1-name">Player 1</span>
+                    <span class="deck-info" id="deck-count-1">Deck: 10</span>
+                </div>
+                <div class="hand" id="hand-1"></div>
+                <div class="cooldown-bar"><div class="cooldown-progress" id="cooldown-progress-1"></div></div>
+            </div>
+            <div class="player-container" id="player2-container">
+                <div class="player-info">
+                    <span class="player-name" id="player2-name">Player 2</span>
+                    <span class="deck-info" id="deck-count-2">Deck: 10</span>
+                </div>
+                <div class="hand" id="hand-2"></div>
+                <div class="cooldown-bar"><div class="cooldown-progress" id="cooldown-progress-2"></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ステップ4: Firebase SDKの読み込み -->
+<script type="module">
+    // Firebase SDKをインポートします
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // --- ここに、ステップ1でコピーしたあなたのfirebaseConfigを貼り付けます ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyBR4AcKo_D26DHF8zeHlW6KBSge6nPEYvw",
+      authDomain: "count-and-nobles-test.firebaseapp.com",
+      projectId: "count-and-nobles-test",
+      storageBucket: "count-and-nobles-test.firebasestorage.app",
+      messagingSenderId: "944479168462",
+      appId: "1:944479168462:web:ffa8c678d0f3a729b5ad9f"
+    };
+    // --------------------------------------------------------------------
+
+    // Firebaseの初期化
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // --- DOM Elements ---
+    const lobbyEl = document.getElementById('lobby');
+    const gameContainerEl = document.getElementById('game-container');
+    const createGameBtn = document.getElementById('create-game-btn');
+    const joinGameBtn = document.getElementById('join-game-btn');
+    const joinGameInput = document.getElementById('join-game-input');
+    const gameIdDisplay = document.getElementById('game-id-display');
+    const lobbyStatus = document.getElementById('lobby-status');
+    // (ゲーム画面のDOM要素はAI版と同様)
+    const timerEl = document.getElementById('timer');
+    const gunEl = document.getElementById('gun');
+    const messageBoxEl = document.getElementById('message-box');
+
+    // --- Game State (ローカル) ---
+    let localGameState = {
+        gameId: null,
+        playerId: null, // 1 or 2
+        unsubscribe: null, // リアルタイム監視を停止するための関数
+        timerInterval: null,
+    };
+    
+    // --- カード定義 (AI版と同様) ---
+    const allCards = [
+        { id: 1, name: "加速", desc: "2秒間、時間の流れが2倍になる。", type: "time", gcd: 3 },
+        { id: 2, name: "減速", desc: "3秒間、時間の流れが半分になる。", type: "time", gcd: 4 },
+        { id: 3, name: "跳躍", desc: "時間を2秒進める。", type: "time", gcd: 2 },
+        { id: 4, name: "回帰", desc: "時間を1.5秒戻す。", type: "time", gcd: 3 },
+        { id: 5, name: "幻惑", desc: "2秒間タイマーを隠す。", type: "meta", gcd: 5 },
+        { id: 6, name: "偽りの合図", desc: "ランダムなタイミングで偽の銃を出現させる。", type: "meta", gcd: 4 },
+        { id: 7, name: "束縛", desc: "相手は2秒間カードを使えない。", type: "special", gcd: 5 },
+        { id: 8, name: "手札交換", desc: "自分の手札を全て交換する。", type: "special", gcd: 2 },
+    ];
+
+    // --- ステップ5: ロビー機能の実装 ---
+    
+    // ルームを作成する
+    createGameBtn.onclick = async () => {
+        lobbyStatus.textContent = "ルームを作成中...";
+        const gameId = Math.random().toString(36).substring(2, 7).toUpperCase(); // ランダムなIDを生成
+        localGameState.gameId = gameId;
+        localGameState.playerId = 1;
+
+        const initialDeck = createDeck();
+        const initialHand = [];
+        for(let i=0; i<3; i++) initialHand.push(initialDeck.pop());
+
+        // Firestoreに保存する初期ゲームデータ
+        const gameData = {
+            status: 'waiting', // waiting, playing, finished
+            timer: 10,
+            timerSpeed: 1,
+            isSignalActive: false,
+            winner: null,
+            players: {
+                '1': { name: 'Player 1', deck: initialDeck, hand: initialHand, gcd: 0, maxGcd: 0 },
+                '2': null // 2人目のプレイヤーはまだいない
+            }
+        };
+
+        try {
+            await setDoc(doc(db, "games", gameId), gameData);
+            gameIdDisplay.innerHTML = `ルームID: <span onclick="copyToClipboard('${gameId}')">${gameId}</span> (クリックしてコピー)`;
+            lobbyStatus.textContent = "プレイヤー2の参加を待っています...";
+            listenToGameUpdates(gameId);
+        } catch (e) {
+            console.error("Error creating game: ", e);
+            lobbyStatus.textContent = "ルームの作成に失敗しました。";
+        }
+    };
+
+    // ルームに参加する
+    joinGameBtn.onclick = async () => {
+        const gameId = joinGameInput.value.toUpperCase();
+        if (!gameId) {
+            lobbyStatus.textContent = "ルームIDを入力してください。";
+            return;
+        }
+        lobbyStatus.textContent = "ルームに参加中...";
+        const gameRef = doc(db, "games", gameId);
+        const gameSnap = await getDoc(gameRef);
+
+        if (gameSnap.exists()) {
+            const gameData = gameSnap.data();
+            if (gameData.players['2']) {
+                lobbyStatus.textContent = "このルームは満員です。";
+                return;
+            }
+            
+            localGameState.gameId = gameId;
+            localGameState.playerId = 2;
+
+            const initialDeck = createDeck();
+            const initialHand = [];
+            for(let i=0; i<3; i++) initialHand.push(initialDeck.pop());
+
+            // プレイヤー2の情報を追加し、ゲームを開始状態にする
+            await updateDoc(gameRef, {
+                'players.2': { name: 'Player 2', deck: initialDeck, hand: initialHand, gcd: 0, maxGcd: 0 },
+                status: 'playing'
+            });
+
+            listenToGameUpdates(gameId);
+
+        } else {
+            lobbyStatus.textContent = "指定されたIDのルームが見つかりません。";
+        }
+    };
+
+    // --- ステップ6: リアルタイム同期の実装 ---
+    function listenToGameUpdates(gameId) {
+        lobbyEl.style.display = 'none';
+        gameContainerEl.style.display = 'flex';
+
+        localGameState.unsubscribe = onSnapshot(doc(db, "games", gameId), (docSnap) => {
+            if (!docSnap.exists()) return;
+            const gameData = docSnap.data();
+            
+            // データベースの変更をUIに反映
+            updateUI(gameData);
+
+            // ゲームの状態に応じた処理
+            if (gameData.status === 'playing' && localGameState.playerId === 1 && !localGameState.timerInterval) {
+                // Player1 (ホスト) のみがタイマーを進める処理を行う
+                localGameState.timerInterval = setInterval(() => {
+                    updateTimer(gameData);
+                }, 10);
+            }
+            
+            if (gameData.status === 'finished') {
+                if(localGameState.timerInterval) clearInterval(localGameState.timerInterval);
+                localGameState.timerInterval = null;
+                // 勝敗メッセージ表示
+                const winnerPlayer = gameData.players[gameData.winner];
+                let message = `勝者: ${winnerPlayer.name}!`;
+                messageBoxEl.innerHTML = `<h2>決着</h2><p>${message}</p>`; // リスタートボタンは省略
+                messageBoxEl.style.display = 'block';
+            }
+        });
+    }
+
+    // Player1がタイマーを更新する関数
+    async function updateTimer(gameData) {
+        if (gameData.status !== 'playing') return;
+
+        let newTime = gameData.timer - (0.01 * gameData.timerSpeed);
+        
+        // GCDもサーバー側で更新
+        let player1Gcd = gameData.players['1'].gcd > 0 ? gameData.players['1'].gcd - 10 : 0;
+        let player2Gcd = gameData.players['2']?.gcd > 0 ? gameData.players['2'].gcd - 10 : 0;
+
+        const updates = {
+            timer: newTime,
+            'players.1.gcd': player1Gcd,
+            'players.2.gcd': player2Gcd,
+        };
+
+        if (newTime <= 0) {
+            updates.timer = 0;
+            updates.isSignalActive = true;
+            updates.status = 'finished'; // 銃表示と同時に終了判定にする
+            updates.winner = Math.random() < 0.5 ? 1 : 2; // 仮の勝者判定
+            if(localGameState.timerInterval) clearInterval(localGameState.timerInterval);
+        }
+        await updateDoc(doc(db, "games", localGameState.gameId), updates);
+    }
+
+    // --- ステップ7: プレイヤーアクションの変更 ---
+    
+    // カードを使用する (Firestoreを更新)
+    async function useCard(cardIndex) {
+        const gameRef = doc(db, "games", localGameState.gameId);
+        const gameSnap = await getDoc(gameRef);
+        if (!gameSnap.exists()) return;
+        
+        let gameData = gameSnap.data();
+        const myPlayerId = localGameState.playerId.toString();
+        const opponentPlayerId = myPlayerId === '1' ? '2' : '1';
+        
+        const me = gameData.players[myPlayerId];
+        if (me.gcd > 0) return; // クールダウン中
+
+        const card = me.hand[cardIndex];
+        if (!card) return;
+        
+        // カード効果を適用して新しいゲーム状態を計算
+        // (注意: この部分は複雑になるため、一部の効果のみ実装)
+        switch(card.name) {
+            case "跳躍": gameData.timer -= 2; break;
+            case "回帰": gameData.timer += 1.5; break;
+            case "束縛": 
+                if(gameData.players[opponentPlayerId]) {
+                    gameData.players[opponentPlayerId].gcd = Math.max(gameData.players[opponentPlayerId].gcd, 2000);
+                    gameData.players[opponentPlayerId].maxGcd = Math.max(gameData.players[opponentPlayerId].maxGcd, 2000);
+                }
+                break;
+        }
+
+        me.gcd = card.gcd * 1000;
+        me.maxGcd = card.gcd * 1000;
+        
+        // カードを山札に戻し、新しいカードを引く
+        me.deck.push(me.hand.splice(cardIndex, 1)[0]);
+        if (me.deck.length > 0) {
+            me.deck.sort(() => Math.random() - 0.5);
+            me.hand.push(me.deck.pop());
+        }
+        
+        // Firestoreのデータを更新
+        await updateDoc(gameRef, gameData);
+    }
+    
+    // 銃を撃つアクション
+    async function shoot() {
+        const gameRef = doc(db, "games", localGameState.gameId);
+        const gameSnap = await getDoc(gameRef);
+        if (!gameSnap.exists()) return;
+        const gameData = gameSnap.data();
+
+        if (gameData.status === 'finished' || gameData.winner) return; // 既に決着済み
+
+        if (gameData.isSignalActive) {
+            // 正しいタイミング -> 勝ち
+            await updateDoc(gameRef, { status: 'finished', winner: localGameState.playerId });
+        } else {
+            // お手つき -> 負け
+            const opponentPlayerId = localGameState.playerId === 1 ? 2 : 1;
+            await updateDoc(gameRef, { status: 'finished', winner: opponentPlayerId });
+        }
+    }
+
+
+    // --- UI更新 (Firestoreのデータに基づいて描画) ---
+    function updateUI(gameData) {
+        if (!gameData) return;
+        
+        // タイマー
+        timerEl.textContent = Math.max(0, gameData.timer).toFixed(2);
+        timerEl.style.color = gameData.timer < 3 ? 'var(--secondary-color)' : 'var(--primary-color)';
+        
+        // 銃
+        gunEl.classList.toggle('active', gameData.isSignalActive);
+
+        // プレイヤー情報
+        const myPlayerId = localGameState.playerId?.toString();
+        const opponentPlayerId = myPlayerId === '1' ? '2' : '1';
+
+        const me = gameData.players[myPlayerId];
+        const opponent = gameData.players[opponentPlayerId];
+
+        if (me) {
+            updatePlayerUI(1, me, true);
+        }
+        if (opponent) {
+            updatePlayerUI(2, opponent, false);
+        } else {
+            // 相手がまだいない場合
+            document.getElementById('player2-name').textContent = "(参加待...)";
+            document.getElementById('hand-2').innerHTML = '';
+        }
+    }
+    
+    function updatePlayerUI(playerNum, playerData, isMe) {
+        document.getElementById(`player${playerNum}-name`).textContent = playerData.name;
+        document.getElementById(`deck-count-${playerNum}`).textContent = `山札: ${playerData.deck.length}`;
+        const handEl = document.getElementById(`hand-${playerNum}`);
+        handEl.innerHTML = '';
+
+        playerData.hand.forEach((card, index) => {
+            const cardDiv = document.createElement('div');
+            cardDiv.classList.add('card');
+            const isDisabled = isMe && playerData.gcd > 0;
+            if (isDisabled) cardDiv.classList.add('disabled');
+            
+            cardDiv.innerHTML = `
+                ${isMe ? `<div class="card-key-hint">${index + 1}</div>` : ''}
+                <div class="card-name">${card.name}</div>
+                <div class="card-desc">${card.desc}</div>
+                <div class="card-info">GCD: ${card.gcd}s</div>
+            `;
+            if (isMe && !isDisabled) {
+                cardDiv.onclick = () => useCard(index);
+            }
+            handEl.appendChild(cardDiv);
+        });
+        
+        const cooldownProgressEl = document.getElementById(`cooldown-progress-${playerNum}`);
+        const gcdPercentage = playerData.maxGcd > 0 ? (playerData.gcd / playerData.maxGcd) * 100 : 0;
+        cooldownProgressEl.style.width = `${gcdPercentage}%`;
+    }
+    
+    // --- ヘルパー関数 ---
+    function createDeck() {
+        let deck = [];
+        for (let i = 0; i < 10; i++) {
+            deck.push({...allCards[Math.floor(Math.random() * allCards.length)]});
+        }
+        return deck;
+    }
+
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            lobbyStatus.textContent = `ID "${text}" をコピーしました！`;
+        });
+    }
+
+    // --- イベントリスナー ---
+    gunEl.addEventListener('click', shoot);
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); shoot(); }
+        if (e.code === 'Digit1') useCard(0);
+        if (e.code === 'Digit2') useCard(1);
+        if (e.code === 'Digit3') useCard(2);
+    });
+
+</script>
+</body>
+</html>
