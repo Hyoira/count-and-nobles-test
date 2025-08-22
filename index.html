@@ -32,6 +32,10 @@
         #timer { font-family: var(--font-timer); font-size: clamp(4rem, 15vw, 8rem); color: var(--primary-color); text-shadow: 0 0 15px var(--primary-color); transition: all 0.2s ease; }
         .gun-area { position: absolute; font-size: 5rem; opacity: 0; transition: opacity 0.5s ease; cursor: pointer; filter: drop-shadow(0 0 10px #fff); }
         .gun-area.active { opacity: 1; }
+        
+        /* --- ★変更点: ゲーム内ルームID表示のスタイル --- */
+        .room-id-ingame { position: absolute; top: 20px; right: 25px; font-family: var(--font-timer); font-size: 1.2rem; color: var(--text-color); opacity: 0.6; }
+
         #message-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.85); padding: 30px 50px; border: 2px solid var(--primary-color); border-radius: 10px; text-align: center; z-index: 100; font-size: 2rem; box-shadow: 0 0 20px rgba(0,0,0,0.7); }
         #message-box h2 { margin: 0 0 15px 0; color: var(--primary-color); }
         #restart-button { margin-top: 20px; padding: 10px 20px; font-size: 1rem; cursor: pointer; background-color: var(--primary-color); color: var(--bg-color); border: none; border-radius: 5px; font-family: var(--font-main); font-weight: bold; transition: all 0.3s ease; }
@@ -55,7 +59,7 @@
 <body>
 
 <div class="container">
-    <!-- ステップ3: ロビー画面の作成 -->
+    <!-- ロビー画面 -->
     <div id="lobby">
         <h1>Count and Nobles</h1>
         <p>オンラインで対戦する</p>
@@ -71,6 +75,8 @@
     <!-- ゲーム画面 (最初は非表示) -->
     <div id="game-container" class="game-container" style="display: none;">
         <div class="top-area">
+            <!-- ★変更点: ゲーム内ルームID表示用の要素を追加 -->
+            <div id="room-id-ingame" class="room-id-ingame"></div>
             <div class="timer-container">
                 <div id="timer">10.00</div>
             </div>
@@ -98,14 +104,12 @@
     </div>
 </div>
 
-<!-- ステップ4: Firebase SDKの読み込み -->
 <script type="module">
     // Firebase SDKをインポートします
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // --- ここに、あなたのfirebaseConfigを貼り付けます ---
-    // ユーザーから提供されたconfigを例として記載
     const firebaseConfig = {
       apiKey: "AIzaSyBR4AcKo_D26DHF8zeHlW6KBSge6nPEYvw",
       authDomain: "count-and-nobles-test.firebaseapp.com",
@@ -131,6 +135,8 @@
     const timerEl = document.getElementById('timer');
     const gunEl = document.getElementById('gun');
     const messageBoxEl = document.getElementById('message-box');
+    // ★変更点: ゲーム内ルームID表示用の要素を取得
+    const roomIdIngameEl = document.getElementById('room-id-ingame');
 
     // --- Game State (ローカル) ---
     let localGameState = {
@@ -222,7 +228,6 @@
 
             if (gameData.status === 'playing' && localGameState.playerId === 1 && !localGameState.timerInterval) {
                 localGameState.timerInterval = setInterval(() => {
-                    // 最新のデータを取得してタイマーを更新
                     getDoc(doc(db, "games", gameId)).then(snap => {
                         if (snap.exists()) updateTimer(snap.data());
                     });
@@ -286,7 +291,6 @@
         const card = me.hand[cardIndex];
         if (!card) return;
         
-        // カード効果を適用
         switch(card.name) {
             case "跳躍": gameData.timer -= 2; break;
             case "回帰": gameData.timer += 1.5; break;
@@ -329,6 +333,12 @@
     // --- UI更新 ---
     function updateUI(gameData) {
         if (!gameData) return;
+        
+        // ★変更点: ゲーム内ルームIDを表示
+        if(localGameState.gameId) {
+            roomIdIngameEl.textContent = `ID: ${localGameState.gameId}`;
+        }
+
         timerEl.textContent = Math.max(0, gameData.timer).toFixed(2);
         timerEl.style.color = gameData.timer < 3 ? 'var(--secondary-color)' : 'var(--primary-color)';
         gunEl.classList.toggle('active', gameData.isSignalActive);
