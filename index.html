@@ -104,12 +104,13 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // --- ここに、ステップ1でコピーしたあなたのfirebaseConfigを貼り付けます ---
+    // --- ここに、あなたのfirebaseConfigを貼り付けます ---
+    // ユーザーから提供されたconfigを例として記載
     const firebaseConfig = {
       apiKey: "AIzaSyBR4AcKo_D26DHF8zeHlW6KBSge6nPEYvw",
       authDomain: "count-and-nobles-test.firebaseapp.com",
       projectId: "count-and-nobles-test",
-      storageBucket: "count-and-nobles-test.firebasestorage.app",
+      storageBucket: "count-and-nobles-test.appspot.com",
       messagingSenderId: "944479168462",
       appId: "1:944479168462:web:ffa8c678d0f3a729b5ad9f"
     };
@@ -127,7 +128,6 @@
     const joinGameInput = document.getElementById('join-game-input');
     const gameIdDisplay = document.getElementById('game-id-display');
     const lobbyStatus = document.getElementById('lobby-status');
-    // (ゲーム画面のDOM要素はAI版と同様)
     const timerEl = document.getElementById('timer');
     const gunEl = document.getElementById('gun');
     const messageBoxEl = document.getElementById('message-box');
@@ -140,7 +140,7 @@
         timerInterval: null,
     };
     
-    // --- カード定義 (AI版と同様) ---
+    // --- カード定義 ---
     const allCards = [
         { id: 1, name: "加速", desc: "2秒間、時間の流れが2倍になる。", type: "time", gcd: 3 },
         { id: 2, name: "減速", desc: "3秒間、時間の流れが半分になる。", type: "time", gcd: 4 },
@@ -152,12 +152,10 @@
         { id: 8, name: "手札交換", desc: "自分の手札を全て交換する。", type: "special", gcd: 2 },
     ];
 
-    // --- ステップ5: ロビー機能の実装 ---
-    
-    // ルームを作成する
+    // --- ロビー機能 ---
     createGameBtn.onclick = async () => {
         lobbyStatus.textContent = "ルームを作成中...";
-        const gameId = Math.random().toString(36).substring(2, 7).toUpperCase(); // ランダムなIDを生成
+        const gameId = Math.random().toString(36).substring(2, 7).toUpperCase();
         localGameState.gameId = gameId;
         localGameState.playerId = 1;
 
@@ -165,69 +163,54 @@
         const initialHand = [];
         for(let i=0; i<3; i++) initialHand.push(initialDeck.pop());
 
-        // Firestoreに保存する初期ゲームデータ
         const gameData = {
-            status: 'waiting', // waiting, playing, finished
-            timer: 10,
-            timerSpeed: 1,
-            isSignalActive: false,
-            winner: null,
+            status: 'waiting', timer: 10, timerSpeed: 1, isSignalActive: false, winner: null,
             players: {
                 '1': { name: 'Player 1', deck: initialDeck, hand: initialHand, gcd: 0, maxGcd: 0 },
-                '2': null // 2人目のプレイヤーはまだいない
+                '2': null
             }
         };
 
         try {
             await setDoc(doc(db, "games", gameId), gameData);
-            gameIdDisplay.innerHTML = `ルームID: <span onclick="copyToClipboard('${gameId}')">${gameId}</span> (クリックしてコピー)`;
+            gameIdDisplay.innerHTML = `ルームID: <span id="game-id-span">${gameId}</span> (クリックしてコピー)`;
+            document.getElementById('game-id-span').onclick = () => copyToClipboard(gameId);
             lobbyStatus.textContent = "プレイヤー2の参加を待っています...";
             listenToGameUpdates(gameId);
         } catch (e) {
             console.error("Error creating game: ", e);
-            lobbyStatus.textContent = "ルームの作成に失敗しました。";
+            lobbyStatus.textContent = "ルームの作成に失敗しました。Firestoreのルールを確認してください。";
         }
     };
 
-    // ルームに参加する
     joinGameBtn.onclick = async () => {
         const gameId = joinGameInput.value.toUpperCase();
-        if (!gameId) {
-            lobbyStatus.textContent = "ルームIDを入力してください。";
-            return;
-        }
+        if (!gameId) { lobbyStatus.textContent = "ルームIDを入力してください。"; return; }
         lobbyStatus.textContent = "ルームに参加中...";
         const gameRef = doc(db, "games", gameId);
         const gameSnap = await getDoc(gameRef);
 
         if (gameSnap.exists()) {
             const gameData = gameSnap.data();
-            if (gameData.players['2']) {
-                lobbyStatus.textContent = "このルームは満員です。";
-                return;
-            }
+            if (gameData.players['2']) { lobbyStatus.textContent = "このルームは満員です。"; return; }
             
             localGameState.gameId = gameId;
             localGameState.playerId = 2;
-
             const initialDeck = createDeck();
             const initialHand = [];
             for(let i=0; i<3; i++) initialHand.push(initialDeck.pop());
 
-            // プレイヤー2の情報を追加し、ゲームを開始状態にする
             await updateDoc(gameRef, {
                 'players.2': { name: 'Player 2', deck: initialDeck, hand: initialHand, gcd: 0, maxGcd: 0 },
                 status: 'playing'
             });
-
             listenToGameUpdates(gameId);
-
         } else {
             lobbyStatus.textContent = "指定されたIDのルームが見つかりません。";
         }
     };
 
-    // --- ステップ6: リアルタイム同期の実装 ---
+    // --- リアルタイム同期 ---
     function listenToGameUpdates(gameId) {
         lobbyEl.style.display = 'none';
         gameContainerEl.style.display = 'flex';
@@ -235,59 +218,60 @@
         localGameState.unsubscribe = onSnapshot(doc(db, "games", gameId), (docSnap) => {
             if (!docSnap.exists()) return;
             const gameData = docSnap.data();
-            
-            // データベースの変更をUIに反映
             updateUI(gameData);
 
-            // ゲームの状態に応じた処理
             if (gameData.status === 'playing' && localGameState.playerId === 1 && !localGameState.timerInterval) {
-                // Player1 (ホスト) のみがタイマーを進める処理を行う
                 localGameState.timerInterval = setInterval(() => {
-                    updateTimer(gameData);
+                    // 最新のデータを取得してタイマーを更新
+                    getDoc(doc(db, "games", gameId)).then(snap => {
+                        if (snap.exists()) updateTimer(snap.data());
+                    });
                 }, 10);
             }
             
             if (gameData.status === 'finished') {
-                if(localGameState.timerInterval) clearInterval(localGameState.timerInterval);
-                localGameState.timerInterval = null;
-                // 勝敗メッセージ表示
+                if(localGameState.timerInterval) {
+                    clearInterval(localGameState.timerInterval);
+                    localGameState.timerInterval = null;
+                }
                 const winnerPlayer = gameData.players[gameData.winner];
-                let message = `勝者: ${winnerPlayer.name}!`;
-                messageBoxEl.innerHTML = `<h2>決着</h2><p>${message}</p>`; // リスタートボタンは省略
-                messageBoxEl.style.display = 'block';
+                if (winnerPlayer) {
+                    let message = `勝者: ${winnerPlayer.name}!`;
+                    messageBoxEl.innerHTML = `<h2>決着</h2><p>${message}</p>`;
+                    messageBoxEl.style.display = 'block';
+                }
             }
         });
     }
 
-    // Player1がタイマーを更新する関数
     async function updateTimer(gameData) {
-        if (gameData.status !== 'playing') return;
+        if (gameData.status !== 'playing') {
+            if(localGameState.timerInterval) clearInterval(localGameState.timerInterval);
+            localGameState.timerInterval = null;
+            return;
+        }
 
         let newTime = gameData.timer - (0.01 * gameData.timerSpeed);
-        
-        // GCDもサーバー側で更新
         let player1Gcd = gameData.players['1'].gcd > 0 ? gameData.players['1'].gcd - 10 : 0;
         let player2Gcd = gameData.players['2']?.gcd > 0 ? gameData.players['2'].gcd - 10 : 0;
 
-        const updates = {
-            timer: newTime,
-            'players.1.gcd': player1Gcd,
-            'players.2.gcd': player2Gcd,
-        };
+        const updates = { 'players.1.gcd': player1Gcd, 'players.2.gcd': player2Gcd };
 
-        if (newTime <= 0) {
+        if (newTime > 0) {
+            updates.timer = newTime;
+        } else if (!gameData.isSignalActive) {
             updates.timer = 0;
             updates.isSignalActive = true;
-            updates.status = 'finished'; // 銃表示と同時に終了判定にする
-            updates.winner = Math.random() < 0.5 ? 1 : 2; // 仮の勝者判定
             if(localGameState.timerInterval) clearInterval(localGameState.timerInterval);
+            localGameState.timerInterval = null;
         }
-        await updateDoc(doc(db, "games", localGameState.gameId), updates);
+        
+        if (Object.keys(updates).length > 0) {
+            await updateDoc(doc(db, "games", localGameState.gameId), updates);
+        }
     }
 
-    // --- ステップ7: プレイヤーアクションの変更 ---
-    
-    // カードを使用する (Firestoreを更新)
+    // --- プレイヤーアクション ---
     async function useCard(cardIndex) {
         const gameRef = doc(db, "games", localGameState.gameId);
         const gameSnap = await getDoc(gameRef);
@@ -296,15 +280,13 @@
         let gameData = gameSnap.data();
         const myPlayerId = localGameState.playerId.toString();
         const opponentPlayerId = myPlayerId === '1' ? '2' : '1';
-        
         const me = gameData.players[myPlayerId];
-        if (me.gcd > 0) return; // クールダウン中
 
+        if (me.gcd > 0 || gameData.status !== 'playing') return;
         const card = me.hand[cardIndex];
         if (!card) return;
         
-        // カード効果を適用して新しいゲーム状態を計算
-        // (注意: この部分は複雑になるため、一部の効果のみ実装)
+        // カード効果を適用
         switch(card.name) {
             case "跳躍": gameData.timer -= 2; break;
             case "回帰": gameData.timer += 1.5; break;
@@ -319,62 +301,47 @@
         me.gcd = card.gcd * 1000;
         me.maxGcd = card.gcd * 1000;
         
-        // カードを山札に戻し、新しいカードを引く
         me.deck.push(me.hand.splice(cardIndex, 1)[0]);
         if (me.deck.length > 0) {
             me.deck.sort(() => Math.random() - 0.5);
             me.hand.push(me.deck.pop());
         }
         
-        // Firestoreのデータを更新
         await updateDoc(gameRef, gameData);
     }
     
-    // 銃を撃つアクション
     async function shoot() {
         const gameRef = doc(db, "games", localGameState.gameId);
         const gameSnap = await getDoc(gameRef);
         if (!gameSnap.exists()) return;
         const gameData = gameSnap.data();
 
-        if (gameData.status === 'finished' || gameData.winner) return; // 既に決着済み
+        if (gameData.status === 'finished' || gameData.winner) return;
 
         if (gameData.isSignalActive) {
-            // 正しいタイミング -> 勝ち
             await updateDoc(gameRef, { status: 'finished', winner: localGameState.playerId });
         } else {
-            // お手つき -> 負け
             const opponentPlayerId = localGameState.playerId === 1 ? 2 : 1;
             await updateDoc(gameRef, { status: 'finished', winner: opponentPlayerId });
         }
     }
 
-
-    // --- UI更新 (Firestoreのデータに基づいて描画) ---
+    // --- UI更新 ---
     function updateUI(gameData) {
         if (!gameData) return;
-        
-        // タイマー
         timerEl.textContent = Math.max(0, gameData.timer).toFixed(2);
         timerEl.style.color = gameData.timer < 3 ? 'var(--secondary-color)' : 'var(--primary-color)';
-        
-        // 銃
         gunEl.classList.toggle('active', gameData.isSignalActive);
 
-        // プレイヤー情報
         const myPlayerId = localGameState.playerId?.toString();
         const opponentPlayerId = myPlayerId === '1' ? '2' : '1';
-
         const me = gameData.players[myPlayerId];
         const opponent = gameData.players[opponentPlayerId];
 
-        if (me) {
-            updatePlayerUI(1, me, true);
-        }
+        if (me) updatePlayerUI(1, me, true);
         if (opponent) {
             updatePlayerUI(2, opponent, false);
         } else {
-            // 相手がまだいない場合
             document.getElementById('player2-name').textContent = "(参加待...)";
             document.getElementById('hand-2').innerHTML = '';
         }
